@@ -1,0 +1,227 @@
+---
+title: "Titanic_Logit"
+author: "IoA"
+date: "May 11, 2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Titanic Dataset
+
+```{r}
+train <- read.csv("train.csv",header = T, na.strings = "")
+test <- read.csv("test.csv", header = T, na.strings = "")
+str(train)
+print("-------------------------------------------------------------------------------------------------------------")
+str(test)
+```
+
+Target Variable - Survived
+
+# Check for Missing Values
+Train
+```{r}
+colSums(is.na(train))
+```
+
+177 missing values in Age, 687 missing values in Cabin and 2 missing values in Embarked
+
+```{r}
+colSums(is.na(test))
+```
+
+86 missing values in Age, 1 missing value in Fare and 327 in cabin
+
+
+# Combine train and test data together. (instead of imputing missing values separately its easy to first combine and then do any operation. You can split back the combined data)
+
+```{r}
+#data = rbind(train,test)
+```
+
+Error : Because the test dataset doesnot contain survived column. Inorder to merge/combine two data frames the number of colmuns must be same
+
+So for this purpose add a column named survived in our test data.
+
+```{r}
+test$Survived <- 1 # Assuming 1
+```
+
+Now you can merge the data without any problem
+```{r}
+data = rbind(train,test)
+str(data)
+```
+
+Change the data types of the columns - Integer to Categorial and vice versa 
+Survived is a categorial column(1 - Yes, 0 - No) therefore it has to be in factor, Similarly Pclass and Sex
+
+```{r}
+data$PassengerId <- as.factor(data$PassengerId)
+data$Survived <- as.factor(data$Survived)
+data$Pclass <- as.factor(data$Pclass)
+str(data)
+```
+
+
+
+```{r}
+colSums(is.na(data))
+```
+
+
+# Visualise Missing data
+```{r}
+library(Amelia)
+missmap(data)
+```
+
+
+
+
+# Missing value imputation
+We dont know whether age is an important parameter in making our prediction. For now lets replace NA's with mean values of age
+```{r}
+data$Age[is.na(data$Age)] <- mean(data$Age[!is.na(data$Age)])
+colSums(is.na(data))
+```
+
+1 missing values in fare is left
+```{r}
+which(is.na(data$Fare))
+```
+
+# Impute fare
+
+```{r}
+data_fare = subset(data, Sex == "male" & Embarked == "S" & Pclass == 3 & SibSp == 0 & Parch == 0)
+View(data_fare)
+```
+
+Inorder to calculate fare price you need to know about the ticket class, gender, the place of boarding, the number of siblings/Spouse and parents/childrens with you.
+
+
+
+```{r}
+sort(table(data_fare$Fare[!is.na(data_fare$Fare)]))
+```
+
+Now you can see that most used fare price is 8.05 (by 53 passengers)
+
+Now replace the NA in fare column by 8.05
+
+```{r}
+data$Fare[is.na(data$Fare)] <- 8.05
+```
+
+
+```{r}
+colSums(is.na(data))
+```
+
+Similary you do for 2 missing values in Embarked column.
+
+```{r}
+table(data$Embarked[!is.na(data$Embarked)])
+```
+
+S - 'Southampton' is way higher than other places of boarding
+
+Lets replace the 2 missing values in Embarked by 'S'
+
+```{r}
+data$Embarked[is.na(data$Embarked)] <- 'S'
+colSums(is.na(data))
+```
+
+Cabin has a lot of missing values and therefore lets drop the column.
+
+# Separating data backto train and test 
+
+```{r}
+train <- data[1:891,]
+colSums(is.na(train))
+
+```
+
+
+```{r}
+test <- data[892:1309,]
+colSums(is.na(test))
+```
+
+```{r}
+test$Survived <- NULL
+```
+
+To check the accuracy of a model we need to split train data into sub train and sub test. (because the actual test data doesn't have infomation about Survived)
+
+# Data Visualization
+```{r}
+require(ggplot2)
+ggplot(train, aes(x = Sex, fill = Survived )) + facet_wrap(~Pclass) + geom_bar() + theme_bw()
+```
+
+
+
+# Split
+```{r}
+library(caTools)
+set.seed(101) 
+sample = sample.split(train$Survived, SplitRatio = .80)
+sub_train = subset(train, sample == TRUE)
+sub_test  = subset(train, sample == FALSE)
+```
+
+
+# Logistic Regression Model - Logit
+
+```{r}
+model <- glm(Survived~Age+Sex+Embarked+Pclass+Fare, data = sub_train, family = "binomial")
+summary(model)
+```
+
+Embarked and Fare doesn't seem to be that significant, Lets remove 
+```{r}
+model <- glm(Survived~Age+Sex+Pclass, data = sub_train, family = "binomial")
+summary(model)
+```
+
+# Prediction
+```{r}
+prediction <- predict(model, newdata = sub_test, type = "response")
+head(prediction)
+```
+
+It returns probabilites, so set a cut off of 0.5
+```{r}
+prediction = ifelse(prediction > 0.5,1,0)
+head(prediction)
+```
+
+# Confusion Matrix
+```{r}
+cm <- table(Actual = sub_test$Survived, Predicted = prediction)
+cm
+```
+
+# Accuracy
+```{r}
+print(sum(diag(cm))/sum(cm))
+```
+
+78.6 percent accuracy.
+
+# Model with full train data
+```{r}
+model <- glm(Survived~Age+Sex+Pclass, data = train, family = "binomial")
+prediction <- predict(model, newdata = test, type = "response")
+prediction = ifelse(prediction > 0.5,1,0)
+test$Survived = prediction
+```
+
